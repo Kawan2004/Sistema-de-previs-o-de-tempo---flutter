@@ -1,4 +1,7 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 import '../widgets/AppBottomNav.dart';
 
 class MainScreen extends StatefulWidget {
@@ -7,200 +10,231 @@ class MainScreen extends StatefulWidget {
 }
 
 class _MainScreenState extends State<MainScreen> {
+  Map<String, dynamic>? weatherData;
+  bool loading = true;
+
   bool isCelsius = true;
-  double selectedDays = 7;
 
-  final List<Map<String, dynamic>> forecast = [
-    {'day': 'Seg', 'tempC': 33},
-    {'day': 'Ter', 'tempC': 30},
-    {'day': 'Qua', 'tempC': 28},
-    {'day': 'Qui', 'tempC': 31},
-    {'day': 'Sex', 'tempC': 29},
-    {'day': 'Sáb', 'tempC': 32},
-    {'day': 'Dom', 'tempC': 30},
-  ];
+  final TextEditingController controller = TextEditingController();
 
-  String formatTemp(int tempC) {
-    if (isCelsius) return '$tempC°';
-    double f = (tempC * 9 / 5) + 32;
-    return '${f.toStringAsFixed(0)}°';
+  @override
+  void initState() {
+    super.initState();
+    loadLastCity();
   }
 
-  List<Map<String, dynamic>> get visibleForecast {
-    return forecast.take(selectedDays.toInt()).toList();
+  Future<void> loadLastCity() async {
+    final prefs = await SharedPreferences.getInstance();
+    final city = prefs.getString("last_city") ?? "Teresina";
+    fetchWeather(city);
+  }
+
+  Future<Map<String, dynamic>?> getCity(String city) async {
+    final url = Uri.parse(
+      'https://geocoding-api.open-meteo.com/v1/search?name=$city&count=1',
+    );
+
+    final res = await http.get(url);
+
+    if (res.statusCode == 200) {
+      final data = jsonDecode(res.body);
+      if (data["results"] == null || data["results"].isEmpty) return null;
+      return data["results"][0];
+    }
+
+    return null;
+  }
+
+  Future<void> fetchWeather(String city) async {
+    setState(() => loading = true);
+
+    final geo = await getCity(city);
+
+    if (geo == null) {
+      setState(() => loading = false);
+      return;
+    }
+
+    final lat = geo["latitude"];
+    final lon = geo["longitude"];
+
+    final url = Uri.parse(
+      'https://api.open-meteo.com/v1/forecast'
+      '?latitude=$lat'
+      '&longitude=$lon'
+      '&current_weather=true',
+    );
+
+    final res = await http.get(url);
+
+    if (res.statusCode == 200) {
+      final data = jsonDecode(res.body);
+
+      setState(() {
+        weatherData = {
+          "city": geo["name"],
+          "temp": data["current_weather"]["temperature"],
+          "wind": data["current_weather"]["windspeed"],
+        };
+        loading = false;
+      });
+
+      // 💾 SALVAR ÚLTIMA CIDADE
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString("last_city", geo["name"]);
+
+    } else {
+      setState(() => loading = false);
+    }
+  }
+
+  String formatTemp(dynamic temp) {
+    if (temp == null) return "--";
+
+    double t = temp.toDouble();
+
+    if (isCelsius) {
+      return "${t.toStringAsFixed(0)}°C";
+    } else {
+      double f = (t * 9 / 5) + 32;
+      return "${f.toStringAsFixed(0)}°F";
+    }
+  }
+
+  Widget tempSwitch() {
+    return GestureDetector(
+      onTap: () {
+        setState(() {
+          isCelsius = !isCelsius;
+        });
+      },
+      child: Container(
+        width: 110,
+        height: 46,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.grey.shade300),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Container(
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: isCelsius ? Colors.blue : Colors.transparent,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  "C",
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: isCelsius ? Colors.white : Colors.black,
+                  ),
+                ),
+              ),
+            ),
+            Expanded(
+              child: Container(
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: !isCelsius ? Colors.blue : Colors.transparent,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  "F",
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: !isCelsius ? Colors.white : Colors.black,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Previsão do tempo'),
+        title: const Text("Clima"),
         centerTitle: true,
         backgroundColor: const Color(0xFFF8F4F1),
         elevation: 0,
       ),
 
-      body: SingleChildScrollView(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
+      body: Stack(
+        children: [
 
-              // 🔍 BUSCA
-              TextField(
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: TextField(
+                controller: controller,
+                onSubmitted: fetchWeather,
                 decoration: InputDecoration(
-                  hintText: 'Buscar cidade...',
+                  hintText: "Buscar cidade...",
                   prefixIcon: Icon(Icons.search),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
                   ),
                 ),
               ),
-
-              SizedBox(height: 20),
-
-              // 🌤️ CARD PRINCIPAL
-              Container(
-                width: double.infinity,
-                padding: EdgeInsets.all(20),
-                decoration: BoxDecoration(
-                  color: Colors.blue.shade50,
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: Stack(
-                  children: [
-
-                    // 🔲 TOGGLE °C / °F
-                    Positioned(
-                      right: 0,
-                      top: 0,
-                      child: GestureDetector(
-                        onTap: () {
-                          setState(() {
-                            isCelsius = !isCelsius;
-                          });
-                        },
-                        child: Container(
-                          width: 42,
-                          height: 36,
-                          alignment: Alignment.center,
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: Colors.grey.shade300),
-                          ),
-                          child: Text(
-                            isCelsius ? '°C' : '°F',
-                            style: TextStyle(fontWeight: FontWeight.bold),
-                          ),
-                        ),
-                      ),
-                    ),
-
-                    // 🌤️ CONTEÚDO CENTRALIZADO
-                    Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.wb_sunny,
-                              size: 60, color: Colors.orange),
-                          SizedBox(height: 10),
-                          Text(
-                            isCelsius ? '32°C' : '90°F',
-                            style: TextStyle(
-                              fontSize: 40,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          Text(
-                            'Teresina - PI',
-                            style: TextStyle(fontSize: 18),
-                          ),
-                          SizedBox(height: 10),
-                          Text('Ensolarado'),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
-              SizedBox(height: 20),
-
-              // 📅 TÍTULO
-              Text(
-                'Próximos dias',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-
-              SizedBox(height: 10),
-
-              // 📊 PREVISÃO
-              Container(
-                padding: EdgeInsets.symmetric(vertical: 14, horizontal: 10),
-                decoration: BoxDecoration(
-                  color: Colors.grey.shade100,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Row(
-                  children: visibleForecast.map((item) {
-                    return Expanded(
-                      child: Column(
-                        children: [
-                          Text(
-                            item['day'],
-                            style: TextStyle(fontSize: 12),
-                          ),
-                          SizedBox(height: 6),
-                          Text(
-                            formatTemp(item['tempC']),
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ],
-                      ),
-                    );
-                  }).toList(),
-                ),
-              ),
-
-              SizedBox(height: 20),
-
-              // 🎚 SLIDER
-              Text(
-                'Quantidade de dias: ${selectedDays.toInt()}',
-                style: TextStyle(fontWeight: FontWeight.bold),
-              ),
-
-              SizedBox(
-                width: double.infinity,
-                child: Slider(
-                  value: selectedDays,
-                  min: 1,
-                  max: 7,
-                  divisions: 6,
-                  label: selectedDays.toInt().toString(),
-                  onChanged: (value) {
-                    setState(() {
-                      selectedDays = value;
-                    });
-                  },
-                ),
-              ),
-            ],
+            ),
           ),
-        ),
+
+          Positioned(
+            top: 150,
+            left: 0,
+            right: 0,
+            child: Center(child: tempSwitch()),
+          ),
+
+          Positioned(
+            top: 280,
+            left: 0,
+            right: 0,
+            child: Center(
+              child: Column(
+                children: [
+                  Icon(Icons.wb_sunny, size: 70, color: Colors.orange),
+
+                  SizedBox(height: 10),
+
+                  Text(
+                    loading ? "--" : formatTemp(weatherData?["temp"]),
+                    style: TextStyle(
+                      fontSize: 45,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+
+                  Text(
+                    weatherData?["city"] ?? "",
+                    style: TextStyle(fontSize: 20),
+                  ),
+
+                  SizedBox(height: 10),
+
+                  Text(
+                    loading
+                        ? ""
+                        : "Vento: ${weatherData?["wind"]} km/h",
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
       ),
 
-      bottomNavigationBar: AppBottomNav(
-        currentIndex: 1,
-      ),
+      bottomNavigationBar: AppBottomNav(currentIndex: 1),
     );
   }
 }

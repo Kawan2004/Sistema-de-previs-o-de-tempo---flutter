@@ -1,4 +1,7 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 import '../widgets/AppBottomNav.dart';
 
 class FavoriteCitiesScreen extends StatefulWidget {
@@ -7,27 +10,119 @@ class FavoriteCitiesScreen extends StatefulWidget {
 }
 
 class _FavoriteCitiesScreenState extends State<FavoriteCitiesScreen> {
-
   final TextEditingController cityController = TextEditingController();
 
-  List<Map<String, dynamic>> favoriteCities = [
-    {'city': 'Teresina', 'temp': 32, 'condition': 'Ensolarado'},
-    {'city': 'São Paulo', 'temp': 25, 'condition': 'Nublado'},
-    {'city': 'Rio de Janeiro', 'temp': 29, 'condition': 'Parcialmente nublado'},
-  ];
+  List<Map<String, dynamic>> favoriteCities = [];
 
-  void addCity(String cityName) {
+  @override
+  void initState() {
+    super.initState();
+    loadCities();
+  }
+
+  // HTTP SEGURO
+  Future<http.Response?> safeGet(Uri url) async {
+    try {
+      final res = await http.get(url);
+
+      if (res.statusCode == 200) {
+        return res;
+      } else {
+        return null;
+      }
+    } catch (e) {
+      debugPrint("Erro HTTP: $e");
+      return null;
+    }
+  }
+
+  // 💾 salvar
+  Future<void> saveCities() async {
+    final prefs = await SharedPreferences.getInstance();
+    prefs.setString('cities', jsonEncode(favoriteCities));
+  }
+
+  // carregar
+  Future<void> loadCities() async {
+    final prefs = await SharedPreferences.getInstance();
+    final data = prefs.getString('cities');
+
+    if (data != null) {
+      final List decoded = jsonDecode(data);
+
+      setState(() {
+        favoriteCities = decoded.cast<Map<String, dynamic>>();
+      });
+    }
+  }
+
+  //  geocoding
+  Future<Map<String, dynamic>?> getCity(String city) async {
+    final url = Uri.parse(
+      'https://geocoding-api.open-meteo.com/v1/search?name=$city&count=1',
+    );
+
+    final res = await safeGet(url);
+    if (res == null) return null;
+
+    final data = jsonDecode(res.body);
+
+    if (data["results"] == null || data["results"].isEmpty) {
+      return null;
+    }
+
+    return data["results"][0];
+  }
+
+  // 🌤️ clima
+  Future<Map<String, dynamic>?> getWeather(double lat, double lon) async {
+    final url = Uri.parse(
+      'https://api.open-meteo.com/v1/forecast'
+      '?latitude=$lat'
+      '&longitude=$lon'
+      '&current_weather=true',
+    );
+
+    final res = await safeGet(url);
+    if (res == null) return null;
+
+    final data = jsonDecode(res.body);
+
+    return data["current_weather"];
+  }
+
+  Future<void> addCity(String cityName) async {
     if (cityName.trim().isEmpty) return;
+
+    Navigator.pop(context);
+
+    final geo = await getCity(cityName);
+    if (geo == null) return;
+
+    final weather = await getWeather(
+      geo["latitude"],
+      geo["longitude"],
+    );
+
+    if (weather == null) return;
 
     setState(() {
       favoriteCities.add({
-        'city': cityName,
-        'temp': 30, // valor mock (depois vem da API)
-        'condition': 'Atualizando...',
+        "city": geo["name"],
+        "temp": weather["temperature"],
       });
     });
 
+    await saveCities();
     cityController.clear();
+  }
+
+  void removeCity(int index) async {
+    setState(() {
+      favoriteCities.removeAt(index);
+    });
+
+    await saveCities();
   }
 
   void showAddCityDialog() {
@@ -44,16 +139,11 @@ class _FavoriteCitiesScreenState extends State<FavoriteCitiesScreen> {
           ),
           actions: [
             TextButton(
-              onPressed: () {
-                Navigator.pop(context);
-              },
+              onPressed: () => Navigator.pop(context),
               child: Text('Cancelar'),
             ),
             ElevatedButton(
-              onPressed: () {
-                addCity(cityController.text);
-                Navigator.pop(context);
-              },
+              onPressed: () => addCity(cityController.text),
               child: Text('Adicionar'),
             ),
           ],
@@ -83,7 +173,6 @@ class _FavoriteCitiesScreenState extends State<FavoriteCitiesScreen> {
               itemCount: favoriteCities.length,
               itemBuilder: (context, index) {
                 final city = favoriteCities[index];
-
                 return _cityCard(city, index);
               },
             ),
@@ -111,26 +200,20 @@ class _FavoriteCitiesScreenState extends State<FavoriteCitiesScreen> {
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
 
-          // 🌍 Cidade
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                city['city'],
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              Text(city['condition']),
-            ],
+          // 🌍 cidade
+          Text(
+            city["city"],
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+            ),
           ),
 
-          // 🌡️ Temp + delete
+          // 🌡️ temperatura
           Row(
             children: [
               Text(
-                '${city['temp']}°',
+                "${city["temp"]}°",
                 style: TextStyle(
                   fontSize: 20,
                   fontWeight: FontWeight.bold,
@@ -140,11 +223,7 @@ class _FavoriteCitiesScreenState extends State<FavoriteCitiesScreen> {
               SizedBox(width: 10),
 
               GestureDetector(
-                onTap: () {
-                  setState(() {
-                    favoriteCities.removeAt(index);
-                  });
-                },
+                onTap: () => removeCity(index),
                 child: Icon(Icons.delete, color: Colors.red),
               ),
             ],

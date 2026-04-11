@@ -1,107 +1,178 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 import '../widgets/AppBottomNav.dart';
 
-class DetailsScreen extends StatelessWidget {
+class DetailsScreen extends StatefulWidget {
+  const DetailsScreen({super.key});
 
-  final String city = "Teresina";
-  final int temp = 32;
-  final String condition = "Ensolarado";
+  @override
+  State<DetailsScreen> createState() => _DetailsScreenState();
+}
+
+class _DetailsScreenState extends State<DetailsScreen> {
+  bool loading = true;
+
+  String city = "";
+  Map<String, dynamic>? current;
+  Map<String, dynamic>? daily;
+
+  @override
+  void initState() {
+    super.initState();
+    loadSavedCity();
+  }
+
+  Future<void> loadSavedCity() async {
+    final prefs = await SharedPreferences.getInstance();
+    final savedCity = prefs.getString("last_city") ?? "Teresina";
+    fetchCityAndWeather(savedCity);
+  }
+
+  Future<void> fetchCityAndWeather(String cityName) async {
+    try {
+      final geoUrl = Uri.parse(
+        'https://geocoding-api.open-meteo.com/v1/search?name=$cityName&count=1',
+      );
+
+      final geoRes = await http.get(geoUrl);
+      final geoData = jsonDecode(geoRes.body);
+
+      if (geoData["results"] == null || geoData["results"].isEmpty) {
+        setState(() => loading = false);
+        return;
+      }
+
+      final geo = geoData["results"][0];
+
+      city = geo["name"];
+
+      final lat = geo["latitude"];
+      final lon = geo["longitude"];
+
+      final weatherUrl = Uri.parse(
+        'https://api.open-meteo.com/v1/forecast'
+        '?latitude=$lat'
+        '&longitude=$lon'
+        '&current_weather=true'
+        '&daily=temperature_2m_max,temperature_2m_min,weathercode'
+        '&timezone=auto',
+      );
+
+      final res = await http.get(weatherUrl);
+      final data = jsonDecode(res.body);
+
+      setState(() {
+        current = data["current_weather"];
+        daily = data["daily"];
+        loading = false;
+      });
+    } catch (e) {
+      setState(() => loading = false);
+    }
+  }
+
+  String getCondition(int code) {
+    if (code == 0) return "Ensolarado";
+    if (code <= 3) return "Parcialmente nublado";
+    if (code <= 48) return "Neblina";
+    if (code <= 67) return "Chuva";
+    if (code <= 77) return "Neve";
+    if (code <= 82) return "Chuvas rápidas";
+    return "Tempestade";
+  }
 
   @override
   Widget build(BuildContext context) {
+    final temp = current?["temperature"];
+    final wind = current?["windspeed"];
+    final code = current?["weathercode"];
+
     return Scaffold(
       appBar: AppBar(
-        title: Text(city),
+        title: Text(city.isEmpty ? "Detalhes" : city),
         centerTitle: true,
-        backgroundColor: const Color(0xFFF8F4F1),
       ),
 
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-
-            // 🌤️ CARD PRINCIPAL
-            Container(
-              width: double.infinity,
-              padding: EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: Colors.blue.shade50,
-                borderRadius: BorderRadius.circular(16),
-              ),
+      body: loading
+          ? const Center(child: CircularProgressIndicator())
+          : Padding(
+              padding: const EdgeInsets.all(16),
               child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Icon(Icons.wb_sunny, size: 60, color: Colors.orange),
-                  SizedBox(height: 10),
+
                   Text(
-                    '$temp°C',
-                    style: TextStyle(
-                      fontSize: 40,
+                    temp != null ? "$temp°C" : "--",
+                    style: const TextStyle(
+                      fontSize: 50,
                       fontWeight: FontWeight.bold,
                     ),
                   ),
+
+                  Text(city),
+
+                  const SizedBox(height: 5),
+
                   Text(
-                    city,
-                    style: TextStyle(fontSize: 18),
+                    code != null ? getCondition(code) : "Sem dados",
+                    style: const TextStyle(color: Colors.grey),
                   ),
-                  SizedBox(height: 10),
-                  Text(condition),
+
+                  const SizedBox(height: 20),
+
+                  const Text(
+                    "Detalhes",
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+
+                  const SizedBox(height: 10),
+
+                  _row("Vento", wind != null ? "$wind km/h" : "--"),
+                  _row("Sensação", temp != null ? "$temp°C" : "--"),
+
+                  const SizedBox(height: 20),
+
+                  const Text(
+                    "Próximos dias",
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+
+                  const SizedBox(height: 10),
+
+                  Expanded(
+                    child: daily == null
+                        ? const Text("Sem previsão")
+                        : ListView.builder(
+                            itemCount: 5,
+                            itemBuilder: (context, i) {
+                              return ListTile(
+                                leading: const Icon(Icons.wb_sunny),
+                                title: Text("Dia ${i + 1}"),
+                                trailing: Text(
+                                  "${daily!["temperature_2m_max"][i]}° / ${daily!["temperature_2m_min"][i]}°",
+                                ),
+                              );
+                            },
+                          ),
+                  ),
                 ],
               ),
             ),
 
-            SizedBox(height: 20),
-
-            // 📊 DETALHES (TUDO JUNTO AGORA)
-            Text(
-              'Detalhes do dia',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-
-            SizedBox(height: 10),
-
-            _detailCard(Icons.water_drop, 'Umidade', '70%'),
-            _detailCard(Icons.air, 'Vento', '12 km/h'),
-            _detailCard(Icons.thermostat, 'Sensação térmica', '34°C'),
-            _detailCard(Icons.wb_sunny, 'Índice UV', '8 (Alto)'),
-            _detailCard(Icons.speed, 'Pressão', '1012 hPa'),
-            _detailCard(Icons.visibility, 'Visibilidade', '10 km'),
-          ],
-        ),
-      ),
-
-      bottomNavigationBar: AppBottomNav(
-        currentIndex: 2,
-      ),
+      bottomNavigationBar: AppBottomNav(currentIndex: 2),
     );
   }
 
-  Widget _detailCard(IconData icon, String label, String value) {
-    return Container(
-      margin: EdgeInsets.only(bottom: 10),
-      padding: EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.grey.shade100,
-        borderRadius: BorderRadius.circular(12),
-      ),
+  Widget _row(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Row(
-            children: [
-              Icon(icon),
-              SizedBox(width: 10),
-              Text(label),
-            ],
-          ),
-          Text(
-            value,
-            style: TextStyle(fontWeight: FontWeight.bold),
-          ),
+          Text(label),
+          Text(value, style: const TextStyle(fontWeight: FontWeight.bold)),
         ],
       ),
     );
