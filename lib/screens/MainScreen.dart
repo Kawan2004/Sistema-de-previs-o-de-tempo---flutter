@@ -2,6 +2,8 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:geolocator/geolocator.dart';
+
 import '../widgets/AppBottomNav.dart';
 
 class MainScreen extends StatefulWidget {
@@ -12,7 +14,6 @@ class MainScreen extends StatefulWidget {
 class _MainScreenState extends State<MainScreen> {
   Map<String, dynamic>? weatherData;
   bool loading = true;
-
   bool isCelsius = true;
 
   final TextEditingController controller = TextEditingController();
@@ -20,15 +21,63 @@ class _MainScreenState extends State<MainScreen> {
   @override
   void initState() {
     super.initState();
-    loadLastCity();
+    initLocation();
   }
 
-  Future<void> loadLastCity() async {
+  // 📌 CONTROLE PRINCIPAL (CORRIGIDO)
+  Future<void> initLocation() async {
     final prefs = await SharedPreferences.getInstance();
-    final city = prefs.getString("last_city") ?? "Teresina";
-    fetchWeather(city);
+    final savedCity = prefs.getString("last_city");
+
+    // ✅ SE JÁ TEM CIDADE SALVA, USA E NÃO MEXE NO GPS
+    if (savedCity != null && savedCity.trim().isNotEmpty) {
+      fetchWeather(savedCity);
+      return;
+    }
+
+    // 📍 SENÃO USA GPS
+    bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) {
+      fetchWeather("Teresina");
+      return;
+    }
+
+    LocationPermission permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+    }
+
+    if (permission == LocationPermission.deniedForever) {
+      fetchWeather("Teresina");
+      return;
+    }
+
+    Position position = await Geolocator.getCurrentPosition(
+      desiredAccuracy: LocationAccuracy.high,
+    );
+
+    await getCityFromCoords(position.latitude, position.longitude);
   }
 
+  // 🌍 GPS → cidade
+  Future<void> getCityFromCoords(double lat, double lon) async {
+    final url = Uri.parse(
+      "https://geocoding-api.open-meteo.com/v1/reverse?latitude=$lat&longitude=$lon",
+    );
+
+    final res = await http.get(url);
+
+    if (res.statusCode == 200) {
+      final data = jsonDecode(res.body);
+      final city = (data["name"] ?? "Teresina").toString();
+
+      fetchWeather(city);
+    } else {
+      fetchWeather("Teresina");
+    }
+  }
+
+  // 🌦 busca cidade
   Future<Map<String, dynamic>?> getCity(String city) async {
     final url = Uri.parse(
       'https://geocoding-api.open-meteo.com/v1/search?name=$city&count=1',
@@ -45,6 +94,7 @@ class _MainScreenState extends State<MainScreen> {
     return null;
   }
 
+  // 🌤 clima + SALVAR cidade
   Future<void> fetchWeather(String city) async {
     setState(() => loading = true);
 
@@ -70,19 +120,20 @@ class _MainScreenState extends State<MainScreen> {
     if (res.statusCode == 200) {
       final data = jsonDecode(res.body);
 
+      final cityName = geo["name"]?.toString() ?? city;
+
       setState(() {
         weatherData = {
-          "city": geo["name"],
+          "city": cityName,
           "temp": data["current_weather"]["temperature"],
           "wind": data["current_weather"]["windspeed"],
         };
         loading = false;
       });
 
-      // 💾 SALVAR ÚLTIMA CIDADE
+      // 💾 SALVA SEMPRE A CIDADE CORRETA
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setString("last_city", geo["name"]);
-
+      await prefs.setString("last_city", cityName);
     } else {
       setState(() => loading = false);
     }
@@ -101,61 +152,6 @@ class _MainScreenState extends State<MainScreen> {
     }
   }
 
-  Widget tempSwitch() {
-    return GestureDetector(
-      onTap: () {
-        setState(() {
-          isCelsius = !isCelsius;
-        });
-      },
-      child: Container(
-        width: 110,
-        height: 46,
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.grey.shade300),
-        ),
-        child: Row(
-          children: [
-            Expanded(
-              child: Container(
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: isCelsius ? Colors.blue : Colors.transparent,
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Text(
-                  "C",
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    color: isCelsius ? Colors.white : Colors.black,
-                  ),
-                ),
-              ),
-            ),
-            Expanded(
-              child: Container(
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: !isCelsius ? Colors.blue : Colors.transparent,
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Text(
-                  "F",
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    color: !isCelsius ? Colors.white : Colors.black,
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -163,12 +159,10 @@ class _MainScreenState extends State<MainScreen> {
         title: const Text("Clima"),
         centerTitle: true,
         backgroundColor: const Color(0xFFF8F4F1),
-        elevation: 0,
       ),
 
       body: Stack(
         children: [
-
           Positioned(
             top: 0,
             left: 0,
@@ -193,7 +187,58 @@ class _MainScreenState extends State<MainScreen> {
             top: 150,
             left: 0,
             right: 0,
-            child: Center(child: tempSwitch()),
+            child: Center(
+              child: GestureDetector(
+                onTap: () {
+                  setState(() {
+                    isCelsius = !isCelsius;
+                  });
+                },
+                child: Container(
+                  width: 110,
+                  height: 46,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.grey.shade300),
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Container(
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            color: isCelsius ? Colors.blue : Colors.transparent,
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Text("C",
+                              style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  color: isCelsius
+                                      ? Colors.white
+                                      : Colors.black)),
+                        ),
+                      ),
+                      Expanded(
+                        child: Container(
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            color: !isCelsius ? Colors.blue : Colors.transparent,
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Text("F",
+                              style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  color: !isCelsius
+                                      ? Colors.white
+                                      : Colors.black)),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
           ),
 
           Positioned(
@@ -203,24 +248,23 @@ class _MainScreenState extends State<MainScreen> {
             child: Center(
               child: Column(
                 children: [
-                  Icon(Icons.wb_sunny, size: 70, color: Colors.orange),
+                  const Icon(Icons.wb_sunny,
+                      size: 70, color: Colors.orange),
 
-                  SizedBox(height: 10),
+                  const SizedBox(height: 10),
 
                   Text(
                     loading ? "--" : formatTemp(weatherData?["temp"]),
-                    style: TextStyle(
-                      fontSize: 45,
-                      fontWeight: FontWeight.bold,
-                    ),
+                    style: const TextStyle(
+                        fontSize: 45, fontWeight: FontWeight.bold),
                   ),
 
                   Text(
                     weatherData?["city"] ?? "",
-                    style: TextStyle(fontSize: 20),
+                    style: const TextStyle(fontSize: 20),
                   ),
 
-                  SizedBox(height: 10),
+                  const SizedBox(height: 10),
 
                   Text(
                     loading
