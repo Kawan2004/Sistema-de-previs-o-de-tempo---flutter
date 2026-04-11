@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../screens/homeScreen.dart';
+import '../screens/MainScreen.dart';
 import '../screens/favoriteCitiesScreen.dart';
 import '../screens/detailsScreen.dart';
 
@@ -21,7 +21,7 @@ class AppBottomNav extends StatelessWidget {
         page = FavoriteCitiesScreen();
         break;
       case 1:
-        page = HomeScreen();
+        page = MainScreen();
         break;
       case 2:
         page = DetailsScreen();
