@@ -1,181 +1,113 @@
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
-import 'dart:convert';
-
 import '../controller/MainController.dart';
 import '../widgets/AppBottomNav.dart';
+import '../widgets/ClimaCard.dart';
 
-class DetailsScreen extends StatefulWidget {
+class DetailsScreen extends StatelessWidget {
   const DetailsScreen({super.key});
 
   @override
-  State<DetailsScreen> createState() => _DetailsScreenState();
-}
-
-class _DetailsScreenState extends State<DetailsScreen> {
-  final MainController c = MainController.instance;
-
-  List<Map<String, dynamic>> previsao = [];
-  bool carregando = true;
-
-  @override
-  void initState() {
-    super.initState();
-    c.addListener(_update);
-    _buscarPrevisao();
-  }
-
-  void _update() {
-    if (mounted) setState(() {});
-  }
-
-  @override
-  void dispose() {
-    c.removeListener(_update);
-    super.dispose();
-  }
-
-  Future<void> _buscarPrevisao() async {
-    final lat = c.latitudeAtual;
-    final lon = c.longitudeAtual;
-
-    if (lat == null || lon == null) return;
-
-    final url = Uri.parse(
-      "https://api.open-meteo.com/v1/forecast"
-      "?latitude=$lat"
-      "&longitude=$lon"
-      "&daily=temperature_2m_max,temperature_2m_min"
-      "&timezone=auto",
-    );
-
-    try {
-      final res = await http.get(url);
-      final data = jsonDecode(res.body);
-
-      final dias = data["daily"];
-
-      final List<String> datas = List<String>.from(dias["time"]);
-      final List max = dias["temperature_2m_max"];
-      final List min = dias["temperature_2m_min"];
-
-      previsao = List.generate(datas.length, (i) {
-        return {
-          "dia": _formatarDia(datas[i]),
-          "tempMax": max[i].round(),
-          "tempMin": min[i].round(),
-        };
-      });
-
-      setState(() {
-        carregando = false;
-      });
-    } catch (_) {
-      setState(() {
-        carregando = false;
-      });
-    }
-  }
-
-  String _formatarDia(String data) {
-    final d = DateTime.parse(data);
-    const dias = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
-    return dias[d.weekday % 7];
-  }
-
-  @override
   Widget build(BuildContext context) {
+    final controller = MainController.instance;
+
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F7FA),
-
-      appBar: AppBar(
-        title: const Text("Detalhes"),
-        centerTitle: true,
-      ),
-
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          // CARD
-          Container(
-            padding: const EdgeInsets.all(22),
-            decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                colors: [Color(0xFF87CEEB), Color(0xFF5DADE2)],
+      body: AnimatedBuilder(
+        animation: controller,
+        builder: (context, _) {
+          return CustomScrollView(
+            slivers: [
+              // Cabeçalho com o ClimaCard (Design Original)
+              SliverToBoxAdapter(
+                child: ClimaCard(controller: controller),
               ),
-              borderRadius: BorderRadius.all(Radius.circular(20)),
-            ),
-            child: Column(
-              children: [
-                Icon(c.iconeClima(), size: 50, color: Colors.white),
-                const SizedBox(height: 10),
-                Text(
-                  c.temperatura(true),
-                  style: const TextStyle(
-                    fontSize: 48,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
+
+              // Título da Seção
+              const SliverToBoxAdapter(
+                child: Padding(
+                  padding: EdgeInsets.fromLTRB(20, 25, 20, 15),
+                  child: Text(
+                    "Previsão Semanal",
+                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
                   ),
                 ),
-                Text(
-                  c.descricaoClima(),
-                  style: const TextStyle(color: Colors.white70),
+              ),
+
+              // Bloco Único com todos os dias
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: Colors.blue.withOpacity(0.05),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: Colors.blue.withOpacity(0.1)),
+                    ),
+                    child: Column(
+                      children: List.generate(controller.previsaoSeteDias.length, (index) {
+                        final dia = controller.previsaoSeteDias[index];
+                        final bool isUltimo = index == controller.previsaoSeteDias.length - 1;
+
+                        return Column(
+                          children: [
+                            _buildDayRow(dia, controller),
+                            // Adiciona uma linha divisória, exceto no último item
+                            if (!isUltimo)
+                              Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 15),
+                                child: Divider(color: Colors.blue.withOpacity(0.1), height: 1),
+                              ),
+                          ],
+                        );
+                      }),
+                    ),
+                  ),
                 ),
-                const SizedBox(height: 6),
+              ),
+
+              const SliverPadding(padding: EdgeInsets.only(bottom: 40)),
+            ],
+          );
+        },
+      ),
+      bottomNavigationBar: const AppBottomNav(currentIndex: 2),
+    );
+  }
+
+  // Widget que desenha a linha de cada dia
+  Widget _buildDayRow(Map<String, dynamic> dia, MainController c) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
+      child: Row(
+        children: [
+          // Dia da semana
+          Expanded(
+            flex: 2,
+            child: Text(
+              dia["dia"],
+              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 16),
+            ),
+          ),
+          // Ícone e Descrição
+          Expanded(
+            flex: 3,
+            child: Row(
+              children: [
+                Icon(c.iconeClima(dia["code"]), size: 22, color: Colors.blue.shade700),
+                const SizedBox(width: 10),
                 Text(
-                  c.cidadeAtual,
-                  style: const TextStyle(color: Colors.white),
+                  c.descricaoClima(dia["code"]),
+                  style: const TextStyle(color: Colors.black87),
                 ),
               ],
             ),
           ),
-
-          const SizedBox(height: 20),
-
-          const Text(
-            "Previsão (7 dias)",
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          // Temperaturas
+          Text(
+            "${dia["max"].round()}° / ${dia["min"].round()}°",
+            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
           ),
-
-          const SizedBox(height: 10),
-
-          if (carregando)
-            const Center(child: CircularProgressIndicator()),
-
-          if (!carregando)
-            SizedBox(
-              height: 140,
-              child: ListView.builder(
-                scrollDirection: Axis.horizontal,
-                itemCount: previsao.length,
-                itemBuilder: (context, index) {
-                  final d = previsao[index];
-
-                  return Container(
-                    width: 100,
-                    margin: const EdgeInsets.only(right: 10),
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text(d["dia"]),
-                        const SizedBox(height: 10),
-                        Text("Máx ${d["tempMax"]}°"),
-                        Text("Mín ${d["tempMin"]}°"),
-                      ],
-                    ),
-                  );
-                },
-              ),
-            ),
         ],
       ),
-
-      bottomNavigationBar: const AppBottomNav(currentIndex: 2),
     );
   }
 }

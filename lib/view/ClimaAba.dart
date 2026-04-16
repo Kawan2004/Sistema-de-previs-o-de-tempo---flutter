@@ -3,61 +3,40 @@ import '../controller/MainController.dart';
 import '../widgets/BarraPesquisa.dart';
 import '../widgets/ClimaCard.dart';
 
-class ClimaAba extends StatefulWidget {
+class ClimaAba extends StatelessWidget {
   const ClimaAba({super.key});
 
   @override
-  State<ClimaAba> createState() => _ClimaAbaState();
-}
-
-class _ClimaAbaState extends State<ClimaAba> {
-  final controller = MainController.instance;
-
-  @override
-  void initState() {
-    super.initState();
-    controller.addListener(_update);
-
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      controller.iniciarApp();
-    });
-  }
-
-  void _update() {
-    if (!mounted) return;
-    setState(() {});
-  }
-
-  @override
-  void dispose() {
-    controller.removeListener(_update);
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
-    final carregando = controller.carregando;
+    final controller = MainController.instance;
 
-    return Column(
-      children: [
-        BarraPesquisa(
-          onSearch: controller.buscarSugestoes,
-          onSelect: (cidade) {
-            controller.buscarClimaPorCidade(cidade["name"]);
-          },
-          sugestoes: controller.sugestoes,
-        ),
-
-        const SizedBox(height: 10),
-
-        Expanded(
-          child: Center(
-            child: carregando
-                ? const CircularProgressIndicator()
-                : ClimaCard(controller: controller),
-          ),
-        ),
-      ],
+    return AnimatedBuilder(
+      animation: controller,
+      builder: (context, _) {
+        return Column(
+          children: [
+            // Barra de pesquisa fixa no topo
+            BarraPesquisa(
+              onSearch: controller.buscarSugestoes,
+              sugestoes: controller.sugestoes,
+              onSelect: (cidade) {
+                controller.buscarClima(
+                  (cidade["latitude"] as num).toDouble(),
+                  (cidade["longitude"] as num).toDouble(),
+                  cidade["name"],
+                );
+              },
+            ),
+            
+            // O conteúdo abaixo ocupa todo o resto da tela
+            Expanded(
+              child: controller.carregando && controller.climaAtual == null
+                  ? const Center(child: CircularProgressIndicator())
+                  : ClimaCard(controller: controller),
+            ),
+          ],
+        );
+      },
     );
   }
 }

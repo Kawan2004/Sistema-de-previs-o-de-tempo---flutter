@@ -3,143 +3,69 @@ import '../controller/MainController.dart';
 
 class ClimaCard extends StatelessWidget {
   final MainController controller;
-
   const ClimaCard({super.key, required this.controller});
-
-  bool get _isFavorita =>
-      controller.favoritos.contains(controller.cidadeAtual);
 
   @override
   Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: controller,
-      builder: (context, _) {
-        return Container(
-          margin: const EdgeInsets.symmetric(horizontal: 20),
-          padding: const EdgeInsets.all(22),
-          decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              colors: [Color(0xFF87CEEB), Color(0xFF5DADE2)],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
-            borderRadius: BorderRadius.circular(22),
-            boxShadow: [
-              BoxShadow(
-                blurRadius: 18,
-                color: Colors.black.withOpacity(0.10),
-                offset: const Offset(0, 6),
-              ),
-            ],
-          ),
+    final bool isFavorita = controller.favoritos.contains(controller.cidadeAtual);
 
-          // 🔥 IMPORTANTE: Stack só para o botão, NÃO para layout
-          child: Stack(
+    return Container(
+      width: double.infinity,
+      // Removemos o height fixo e deixamos o padding ditar o tamanho
+      padding: const EdgeInsets.symmetric(horizontal: 25, vertical: 40),
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          colors: [Color(0xFF87CEEB), Color(0xFF5DADE2)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+      ),
+      child: Stack(
+        children: [
+          Column(
+            mainAxisSize: MainAxisSize.min, // Faz o container se ajustar ao conteúdo
+            crossAxisAlignment: CrossAxisAlignment.start, // Alinhamento original à esquerda
             children: [
-
-              // =========================
-              // CONTEÚDO ORIGINAL (INTACTO)
-              // =========================
+              Text(
+                controller.cidadeAtual,
+                style: const TextStyle(fontSize: 22, color: Colors.white, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 10),
               Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  Expanded(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Icon(
-                          controller.iconeClima(),
-                          size: 60,
-                          color: Colors.white,
-                        ),
-
-                        const SizedBox(height: 10),
-
-                        Text(
-                          controller.temperatura(true),
-                          style: const TextStyle(
-                            fontSize: 46,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white,
-                          ),
-                        ),
-
-                        const SizedBox(height: 6),
-
-                        Text(
-                          controller.descricaoClima(),
-                          style: const TextStyle(
-                            fontSize: 14,
-                            color: Colors.white70,
-                          ),
-                        ),
-                      ],
-                    ),
+                  Text(
+                    controller.temperatura(true),
+                    style: const TextStyle(fontSize: 60, color: Colors.white, fontWeight: FontWeight.w300),
                   ),
-
-                  Container(
-                    width: 1,
-                    height: 80,
-                    color: Colors.white.withOpacity(0.3),
-                  ),
-
-                  const SizedBox(width: 16),
-
-                  Expanded(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      children: [
-                        Text(
-                          controller.cidadeAtual.isNotEmpty
-                              ? controller.cidadeAtual
-                              : "--",
-                          textAlign: TextAlign.right,
-                          style: const TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.white,
-                          ),
-                        ),
-
-                        const SizedBox(height: 6),
-
-                        const Text(
-                          "Brasil",
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: Colors.white70,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
+                  const SizedBox(width: 20),
+                  Icon(controller.iconeClima(), size: 60, color: Colors.white),
                 ],
               ),
-
-              // =========================
-              // ❤️ BOTÃO FAVORITO (SÓ OVERLAY)
-              // =========================
-              Positioned(
-                top: -8,
-                right: -8,
-                child: IconButton(
-                  icon: Icon(
-                    _isFavorita
-                        ? Icons.favorite
-                        : Icons.favorite_border,
-                    color: Colors.red,
-                  ),
-                  onPressed: () {
-                    if (controller.cidadeAtual.isEmpty) return;
-                    controller.toggleFavorito(controller.cidadeAtual);
-                  },
-                ),
+              Text(
+                controller.descricaoClima(),
+                style: const TextStyle(fontSize: 18, color: Colors.white70),
+              ),
+              const SizedBox(height: 5),
+              Text(
+                "Vento: ${controller.climaAtual?['windspeed'] ?? 0} km/h",
+                style: const TextStyle(color: Colors.white60, fontSize: 14),
               ),
             ],
           ),
-        );
-      },
+          Positioned(
+            right: 0,
+            top: 0,
+            child: IconButton(
+              icon: Icon(
+                isFavorita ? Icons.favorite : Icons.favorite_border,
+                color: isFavorita ? Colors.red : Colors.white,
+              ),
+              onPressed: () => controller.toggleFavorito(controller.cidadeAtual),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

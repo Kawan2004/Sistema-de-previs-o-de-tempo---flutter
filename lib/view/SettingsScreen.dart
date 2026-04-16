@@ -1,73 +1,45 @@
 import 'package:flutter/material.dart';
 import '../controller/MainController.dart';
 import '../controller/ThemeController.dart';
+import '../widgets/AppBottomNav.dart';
 
-class SettingsScreen extends StatefulWidget {
+class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
 
   @override
-  State<SettingsScreen> createState() => _SettingsScreenState();
-}
-
-class _SettingsScreenState extends State<SettingsScreen> {
-  final controller = MainController.instance;
-  final themeController = ThemeController.instance;
-
-  @override
   Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: themeController,
-      builder: (context, _) {
-        return Scaffold(
-          appBar: AppBar(
-            title: const Text("Configurações"),
-            centerTitle: true,
-          ),
+    final controller = MainController.instance;
+    final theme = ThemeController.instance;
 
-          body: ListView(
+    return Scaffold(
+      appBar: AppBar(title: const Text("Configurações")),
+      body: AnimatedBuilder(
+        animation: Listenable.merge([controller, theme]),
+        builder: (context, _) {
+          return ListView(
             padding: const EdgeInsets.all(16),
             children: [
-
-              const Text(
-                "Clima",
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-              ),
-
-              const SizedBox(height: 10),
-
+              const Text("Preferências", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
               SwitchListTile(
-                title: const Text("Fahrenheit"),
-                subtitle: const Text("Desligado = Celsius"),
+                title: const Text("Usar Fahrenheit"),
                 value: controller.usarFahrenheit,
-                onChanged: (value) {
-                  setState(() {
-                    controller.usarFahrenheit = value;
-                  });
-
+                onChanged: (v) {
+                  controller.usarFahrenheit = v;
                   controller.notifyListeners();
                 },
               ),
-
-              const SizedBox(height: 20),
-
-              const Text(
-                "Aparência",
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-              ),
-
-              const SizedBox(height: 10),
-
+              const Divider(),
+              const Text("Aparência", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
               SwitchListTile(
-                title: const Text("Modo escuro"),
-                value: themeController.isDark,
-                onChanged: (value) {
-                  themeController.toggleTheme();
-                },
+                title: const Text("Modo Escuro"),
+                value: theme.isDark,
+                onChanged: (v) => theme.toggleTheme(),
               ),
             ],
-          ),
-        );
-      },
+          );
+        },
+      ),
+      bottomNavigationBar: const AppBottomNav(currentIndex: 0),
     );
   }
 }
